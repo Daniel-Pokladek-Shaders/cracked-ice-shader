@@ -3,7 +3,6 @@ Shader "Cracked Ice" {
         _Color ("Color", Color) = (1,1,1,1)
         _MainTex ("Albedo (RGB)", 2D) = "white" {}
         _CracksStrength("Cracks Fade Strength", vector) = (0.0, .75, .45, .25)
-        _Glossiness ("Smoothness", Range(0,1)) = 0.5
         _Metallic ("Metallic", Range(0,1)) = 0.0
 
         _Normal("Normal Texture", 2D) = "blue" {}
@@ -13,7 +12,7 @@ Shader "Cracked Ice" {
         _OffsetScale("Offset Scale", float) = 0.5
     }
     SubShader {
-        Tags { "RenderType"="Opaque" }
+        Tags { "RenderType"="Opaque" "DisableBatching"="True" }
 
         CGPROGRAM
         #pragma surface surf Standard fullforwardshadows vertex:vert
@@ -67,41 +66,34 @@ Shader "Cracked Ice" {
         }
 
         void surf (Input IN, inout SurfaceOutputStandard o) {
-            fixed4 mainTex = tex2D(_MainTex, IN.uv_MainTex) * _Color;
+            fixed4 mainTex = tex2D(_MainTex, IN.uv_MainTex);
 
             fixed3 normal = UnpackNormal(tex2D(_Normal, IN.uv_Normal));
             fixed roughness = tex2D(_Roughness, IN.uv_Roughness).r * _RoughnessStrength;
 
             fixed parallax = 0;
-            for (int j = 0; j < 4; j ++) {
+            for (int j = 1; j < 4; j ++) {
                 float ratio = (float) j / 4;
+                float lerpedOffset = lerp(0, _OffsetScale, ratio);
+                float normalizedTangent = normalize(IN.viewDirTangent);
 
-                if (j == 0)
-                {
-                    // I don't want to show the first layer, because this would be flat on the object (no depth),
-                    //   I want to start with the second iteration of the parallax effect, which will have depth.
-                }
-                else if (j == 1)
-                {
+                float2 layerUVs = IN.uv_Layers + lerpedOffset * normalize(IN.viewDirTangent) + normal;
+
+                if (j == 1) {
                     // First layer of cracks.
-                    parallax += tex2D(_Layers, IN.uv_Layers + lerp(0, _OffsetScale, ratio) * normalize(IN.viewDirTangent) + normal).g * _CracksStrength.y;
-                }
-                else if (j == 2)
-                {
+                    parallax += tex2D(_Layers, layerUVs).r * _CracksStrength.y;
+                } else if (j == 2) {
                     // Second layer of cracks.
-                    parallax += tex2D(_Layers, IN.uv_Layers + lerp(0, _OffsetScale, ratio) * normalize(IN.viewDirTangent) + normal).b * _CracksStrength.z;
-                }
-                else if (j == 3)
-                {
+                    parallax += tex2D(_Layers, layerUVs).g * _CracksStrength.z;
+                } else if (j == 3) {
                     // Third layer of cracks.
-                    parallax += tex2D(_Layers, IN.uv_Layers + lerp(0, _OffsetScale, ratio) * normalize(IN.viewDirTangent) + normal).r * _CracksStrength.w;
+                    parallax += tex2D(_Layers, layerUVs).b * _CracksStrength.w;
                 }
             }
             parallax *= 1.5;
-
             fixed4 blended = blendMultiply(mainTex, parallax, 0.55);
-
-            o.Albedo = blended.rgb;
+            
+            o.Albedo = blended * _Color;
             o.Normal = normal;
             o.Metallic = _Metallic;
             o.Smoothness = 1 - roughness;
